@@ -30,6 +30,7 @@ struct ImageDimIntrinsicInfo;
 /// This class provides the information for the target register banks.
 class AMDGPULegalizerInfo final : public LegalizerInfo {
   const GCNSubtarget &ST;
+  const GCNTargetMachine &TM;
 
 public:
   AMDGPULegalizerInfo(const GCNSubtarget &ST,

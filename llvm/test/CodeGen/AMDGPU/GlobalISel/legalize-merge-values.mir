@@ -977,8 +977,11 @@ body: |
     ; CHECK-NEXT: [[COPY95:%[0-9]+]]:_(s32) = COPY [[C]](s32)
     ; CHECK-NEXT: [[SHL92:%[0-9]+]]:_(s32) = G_SHL [[COPY95]], [[C31]](s32)
     ; CHECK-NEXT: [[OR92:%[0-9]+]]:_(s32) = G_OR [[OR91]], [[SHL92]]
-    ; CHECK-NEXT: [[MV:%[0-9]+]]:_(s96) = G_MERGE_VALUES [[OR30]](s32), [[OR61]](s32), [[OR92]](s32)
-    ; CHECK-NEXT: [[TRUNC:%[0-9]+]]:_(s68) = G_TRUNC [[MV]](s96)
+    ; CHECK-NEXT: [[DEF:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
+    ; CHECK-NEXT: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[OR30]](s32), [[OR61]](s32)
+    ; CHECK-NEXT: [[MV1:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[OR92]](s32), [[DEF]](s32)
+    ; CHECK-NEXT: [[MV2:%[0-9]+]]:_(s128) = G_MERGE_VALUES [[MV]](s64), [[MV1]](s64)
+    ; CHECK-NEXT: [[TRUNC:%[0-9]+]]:_(s68) = G_TRUNC [[MV2]](s128)
     ; CHECK-NEXT: S_NOP 0, implicit [[TRUNC]](s68)
     %0:_(s17) = G_CONSTANT i17 0
     %1:_(s17) = G_CONSTANT i17 1

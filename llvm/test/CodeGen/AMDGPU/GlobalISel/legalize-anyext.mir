@@ -372,27 +372,6 @@ body: |
 ...
 
 ---
-name: test_anyext_s32_to_s224
-body: |
-  bb.0:
-    liveins: $vgpr0
-
-    ; CHECK-LABEL: name: test_anyext_s32_to_s224
-    ; CHECK: liveins: $vgpr0
-    ; CHECK-NEXT: {{  $}}
-    ; CHECK-NEXT: [[COPY:%[0-9]+]]:_(s32) = COPY $vgpr0
-    ; CHECK-NEXT: [[DEF:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
-    ; CHECK-NEXT: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[COPY]](s32), [[DEF]](s32)
-    ; CHECK-NEXT: [[DEF1:%[0-9]+]]:_(s64) = G_IMPLICIT_DEF
-    ; CHECK-NEXT: [[MV1:%[0-9]+]]:_(s448) = G_MERGE_VALUES [[MV]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64)
-    ; CHECK-NEXT: [[TRUNC:%[0-9]+]]:_(s224) = G_TRUNC [[MV1]](s448)
-    ; CHECK-NEXT: S_ENDPGM 0, implicit [[TRUNC]](s224)
-    %0:_(s32) = COPY $vgpr0
-    %1:_(s224) = G_ANYEXT %0
-    S_ENDPGM 0, implicit %1
-...
-
----
 name: test_anyext_s32_to_s256
 body: |
   bb.0:
@@ -445,8 +424,8 @@ body: |
     ; CHECK-NEXT: [[DEF:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
     ; CHECK-NEXT: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[COPY]](s32), [[DEF]](s32)
     ; CHECK-NEXT: [[DEF1:%[0-9]+]]:_(s64) = G_IMPLICIT_DEF
-    ; CHECK-NEXT: [[MV1:%[0-9]+]]:_(s448) = G_MERGE_VALUES [[MV]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64)
-    ; CHECK-NEXT: [[TRUNC:%[0-9]+]]:_(s224) = G_TRUNC [[MV1]](s448)
+    ; CHECK-NEXT: [[MV1:%[0-9]+]]:_(s512) = G_MERGE_VALUES [[MV]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64)
+    ; CHECK-NEXT: [[TRUNC:%[0-9]+]]:_(s224) = G_TRUNC [[MV1]](s512)
     ; CHECK-NEXT: S_ENDPGM 0, implicit [[TRUNC]](s224)
     %0:_(s32) = COPY $vgpr0
     %1:_(s224) = G_ANYEXT %0
@@ -649,8 +628,8 @@ body: |
     ; CHECK-NEXT: [[OR4:%[0-9]+]]:_(s32) = G_OR [[ZEXT2]], [[SHL4]]
     ; CHECK-NEXT: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[OR3]](s32), [[OR4]](s32)
     ; CHECK-NEXT: [[DEF1:%[0-9]+]]:_(s64) = G_IMPLICIT_DEF
-    ; CHECK-NEXT: [[MV1:%[0-9]+]]:_(s704) = G_MERGE_VALUES [[MV]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64)
-    ; CHECK-NEXT: [[TRUNC5:%[0-9]+]]:_(s88) = G_TRUNC [[MV1]](s704)
+    ; CHECK-NEXT: [[MV1:%[0-9]+]]:_(s1024) = G_MERGE_VALUES [[MV]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64), [[DEF1]](s64)
+    ; CHECK-NEXT: [[TRUNC5:%[0-9]+]]:_(s88) = G_TRUNC [[MV1]](s1024)
     ; CHECK-NEXT: S_ENDPGM 0, implicit [[TRUNC5]](s88)
     %0:_(s32) = COPY $vgpr0
     %1:_(s88) = G_ANYEXT %0
@@ -693,8 +672,8 @@ body: |
     ; CHECK-NEXT: [[OR1:%[0-9]+]]:_(s32) = G_OR [[C2]], [[SHL1]]
     ; CHECK-NEXT: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[OR]](s32), [[OR1]](s32)
     ; CHECK-NEXT: [[DEF:%[0-9]+]]:_(s64) = G_IMPLICIT_DEF
-    ; CHECK-NEXT: [[MV1:%[0-9]+]]:_(s448) = G_MERGE_VALUES [[MV]](s64), [[DEF]](s64), [[DEF]](s64), [[DEF]](s64), [[DEF]](s64), [[DEF]](s64), [[DEF]](s64)
-    ; CHECK-NEXT: [[TRUNC:%[0-9]+]]:_(s112) = G_TRUNC [[MV1]](s448)
+    ; CHECK-NEXT: [[MV1:%[0-9]+]]:_(s512) = G_MERGE_VALUES [[MV]](s64), [[DEF]](s64), [[DEF]](s64), [[DEF]](s64), [[DEF]](s64), [[DEF]](s64), [[DEF]](s64), [[DEF]](s64)
+    ; CHECK-NEXT: [[TRUNC:%[0-9]+]]:_(s112) = G_TRUNC [[MV1]](s512)
     ; CHECK-NEXT: S_ENDPGM 0, implicit [[TRUNC]](s112)
     %0:_(s32) = COPY $vgpr0
     %1:_(s2) = G_TRUNC %0

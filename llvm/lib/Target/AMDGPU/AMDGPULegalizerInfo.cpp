@@ -18,17 +18,21 @@
 #include "AMDGPUInstrInfo.h"
 #include "AMDGPUTargetMachine.h"
 #include "SIMachineFunctionInfo.h"
+#include "SIRegisterInfo.h"
 #include "Utils/AMDGPUBaseInfo.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/CodeGen/GlobalISel/GenericMachineInstrs.h"
 #include "llvm/CodeGen/GlobalISel/LegalizerHelper.h"
+#include "llvm/CodeGen/GlobalISel/LegalizerInfo.h"
 #include "llvm/CodeGen/GlobalISel/MIPatternMatch.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
 #include "llvm/CodeGen/GlobalISel/Utils.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/IR/IntrinsicsR600.h"
+#include "llvm/Target/TargetMachine.h"
+#include <initializer_list>
 
 #define DEBUG_TYPE "amdgpu-legalinfo"
 
@@ -198,6 +202,13 @@ static LegalizeMutation bitcastToVectorElement32(unsigned TypeIdx) {
   };
 }
 
+LegalityPredicate eltSizeIs(unsigned TypeIdx, unsigned Size) {
+  return [=](const LegalityQuery &Query) {
+    const LLT QueryTy = Query.Types[TypeIdx];
+    return QueryTy.getElementType().getSizeInBits() == Size;
+  };
+}
+
 static LegalityPredicate vectorSmallerThan(unsigned TypeIdx, unsigned Size) {
   return [=](const LegalityQuery &Query) {
     const LLT QueryTy = Query.Types[TypeIdx];
@@ -228,37 +239,143 @@ static bool isRegisterVectorElementType(LLT EltTy) {
   return EltSize == 16 || EltSize % 32 == 0;
 }
 
-static bool isRegisterVectorType(LLT Ty) {
-  const int EltSize = Ty.getElementType().getSizeInBits();
-  return EltSize == 32 || EltSize == 64 ||
-         (EltSize == 16 && Ty.getNumElements() % 2 == 0) ||
-         EltSize == 128 || EltSize == 256;
+static const LLT S1 = LLT::scalar(1);
+static const LLT S8 = LLT::scalar(8);
+static const LLT S16 = LLT::scalar(16);
+static const LLT S32 = LLT::scalar(32);
+static const LLT S64 = LLT::scalar(64);
+static const LLT S96 = LLT::scalar(96);
+static const LLT S128 = LLT::scalar(128);
+static const LLT S160 = LLT::scalar(160);
+static const LLT S192 = LLT::scalar(192);
+static const LLT S224 = LLT::scalar(224);
+static const LLT S256 = LLT::scalar(256);
+static const LLT S320 = LLT::scalar(320);
+static const LLT S384 = LLT::scalar(384);
+static const LLT S512 = LLT::scalar(512);
+static const LLT S1024 = LLT::scalar(1024);
+static const LLT MaxScalar = LLT::scalar(MaxRegisterSize);
+
+static const LLT V2S8 = LLT::fixed_vector(2, 8);
+
+static const LLT V2S16 = LLT::fixed_vector(2, 16);
+static const LLT V4S16 = LLT::fixed_vector(4, 16);
+static const LLT V6S16 = LLT::fixed_vector(6, 16);
+static const LLT V8S16 = LLT::fixed_vector(8, 16);
+static const LLT V10S16 = LLT::fixed_vector(10, 16);
+static const LLT V12S16 = LLT::fixed_vector(12, 16);
+static const LLT V14S16 = LLT::fixed_vector(14, 16);
+static const LLT V16S16 = LLT::fixed_vector(16, 16);
+static const LLT V24S16 = LLT::fixed_vector(24, 16);
+static const LLT V32S16 = LLT::fixed_vector(32, 16);
+
+static const LLT V2S32 = LLT::fixed_vector(2, 32);
+static const LLT V3S32 = LLT::fixed_vector(3, 32);
+static const LLT V4S32 = LLT::fixed_vector(4, 32);
+static const LLT V5S32 = LLT::fixed_vector(5, 32);
+static const LLT V6S32 = LLT::fixed_vector(6, 32);
+static const LLT V7S32 = LLT::fixed_vector(7, 32);
+static const LLT V8S32 = LLT::fixed_vector(8, 32);
+static const LLT V9S32 = LLT::fixed_vector(9, 32);
+static const LLT V10S32 = LLT::fixed_vector(10, 32);
+static const LLT V11S32 = LLT::fixed_vector(11, 32);
+static const LLT V12S32 = LLT::fixed_vector(12, 32);
+static const LLT V16S32 = LLT::fixed_vector(16, 32);
+static const LLT V32S32 = LLT::fixed_vector(32, 32);
+
+static const LLT V2S64 = LLT::fixed_vector(2, 64);
+static const LLT V3S64 = LLT::fixed_vector(3, 64);
+static const LLT V4S64 = LLT::fixed_vector(4, 64);
+static const LLT V5S64 = LLT::fixed_vector(5, 64);
+static const LLT V6S64 = LLT::fixed_vector(6, 64);
+static const LLT V8S64 = LLT::fixed_vector(8, 64);
+static const LLT V16S64 = LLT::fixed_vector(16, 64);
+
+static const LLT V2S128 = LLT::fixed_vector(2, 128);
+static const LLT V4S128 = LLT::fixed_vector(4, 128);
+
+static const LLT V2S256 = LLT::fixed_vector(2, 256);
+
+static const LLT V2S512 = LLT::fixed_vector(2, 512);
+
+static std::initializer_list<LLT> AllScalarTypes = {
+    S32, S64, S96, S128, S160, S192, S224, S256, S320, S384, S512, S1024};
+
+static std::initializer_list<LLT> AllS16Vectors = {
+    V2S16, V4S16, V6S16, V8S16, V10S16, V12S16, V14S16, V16S16, V24S16, V32S16};
+
+static std::initializer_list<LLT> AllOtherVectors = {V2S128, V4S128, V2S256,
+                                                     V2S512};
+
+static std::initializer_list<LLT> AllS32Vectors = {
+    V2S32, V3S32,  V4S32,  V5S32,  V6S32,  V7S32, V8S32,
+    V9S32, V10S32, V11S32, V12S32, V16S32, V32S32};
+
+static std::initializer_list<LLT> AllS64Vectors = {V2S64, V3S64, V4S64, V5S64,
+                                                   V6S64, V8S64, V16S64};
+
+static bool typeInSet(LLT Ty, std::initializer_list<LLT> TypesInit) {
+  SmallVector<LLT, 4> Types = TypesInit;
+  return llvm::is_contained(Types, Ty);
 }
 
-static bool isRegisterType(LLT Ty) {
-  if (!isRegisterSize(Ty.getSizeInBits()))
-    return false;
+static bool isRegType(LLT Ty,
+                                   const GCNTargetMachine &TM) {
+  auto GetAddrSpacePtr = [&TM](unsigned AS) {
+    return LLT::pointer(AS, TM.getPointerSizeInBits(AS));
+  };
 
-  if (Ty.isVector())
-    return isRegisterVectorType(Ty);
+  const LLT GlobalPtr = GetAddrSpacePtr(AMDGPUAS::GLOBAL_ADDRESS); // p1
+  const LLT ConstantPtr = GetAddrSpacePtr(AMDGPUAS::CONSTANT_ADDRESS);
+  const LLT Constant32Ptr = GetAddrSpacePtr(AMDGPUAS::CONSTANT_ADDRESS_32BIT);
+  const LLT LocalPtr = GetAddrSpacePtr(AMDGPUAS::LOCAL_ADDRESS);
+  const LLT RegionPtr = GetAddrSpacePtr(AMDGPUAS::REGION_ADDRESS);
+  const LLT FlatPtr = GetAddrSpacePtr(AMDGPUAS::FLAT_ADDRESS);
+  const LLT PrivatePtr = GetAddrSpacePtr(AMDGPUAS::PRIVATE_ADDRESS); // p5
+  const LLT RsrcPtr = GetAddrSpacePtr(AMDGPUAS::BUFFER_RESOURCE);
+  const LLT AS999Ptr = GetAddrSpacePtr(999);
 
-  return true;
+  const LLT V2PrivatePtr = LLT::fixed_vector(2, PrivatePtr);
+  const LLT V4PrivatePtr = LLT::fixed_vector(4, PrivatePtr);
+  const LLT V2GlobalPtr = LLT::fixed_vector(2, GlobalPtr);
+  const LLT V4GlobalPtr = LLT::fixed_vector(4, GlobalPtr);
+  const LLT V8GlobalPtr = LLT::fixed_vector(8, GlobalPtr);
+  const LLT V2LocalPtr = LLT::fixed_vector(2, LocalPtr);
+  const LLT V3LocalPtr = LLT::fixed_vector(3, LocalPtr);
+  const LLT V4LocalPtr = LLT::fixed_vector(4, LocalPtr);
+  const LLT V7LocalPtr = LLT::fixed_vector(7, LocalPtr);
+  const LLT V8LocalPtr = LLT::fixed_vector(8, LocalPtr);
+  const LLT V5LocalPtr = LLT::fixed_vector(5, LocalPtr);
+  const LLT V16LocalPtr = LLT::fixed_vector(16, LocalPtr);
+  const LLT V2FlatPtr = LLT::fixed_vector(2, FlatPtr);
+  const LLT V4FlatPtr = LLT::fixed_vector(4, FlatPtr);
+  const LLT V2AS999Ptr = LLT::fixed_vector(2, AS999Ptr);
+  const LLT V4AS999Ptr = LLT::fixed_vector(4, AS999Ptr);
+
+  std::initializer_list<LLT> AllPtrTypes = {
+      GlobalPtr,    ConstantPtr,  Constant32Ptr, PrivatePtr,  LocalPtr,
+      RegionPtr,    RsrcPtr,      FlatPtr,       V2GlobalPtr, V4GlobalPtr,
+      V8GlobalPtr,  V2LocalPtr,   V3LocalPtr,    V4LocalPtr,  V7LocalPtr,
+      V8LocalPtr,   V16LocalPtr,  V2FlatPtr,     V4FlatPtr,   V5LocalPtr,
+      V2PrivatePtr, V4PrivatePtr, V2AS999Ptr,    V4AS999Ptr};
+
+  return typeInSet(Ty, AllScalarTypes) || typeInSet(Ty, AllS16Vectors) ||
+         typeInSet(Ty, AllPtrTypes) || typeInSet(Ty, AllS32Vectors) ||
+         typeInSet(Ty, AllS64Vectors) || typeInSet(Ty, AllOtherVectors) ||
+         Ty.isPointer();
 }
 
-// Any combination of 32 or 64-bit elements up the maximum register size, and
-// multiples of v2s16.
-static LegalityPredicate isRegisterType(unsigned TypeIdx) {
-  return [=](const LegalityQuery &Query) {
-    return isRegisterType(Query.Types[TypeIdx]);
+static LegalityPredicate isRegType(unsigned TypeIdx, const GCNTargetMachine &TM) {
+  return [TypeIdx, &TM](const LegalityQuery &Query) {
+    return isRegType(Query.Types[TypeIdx], TM);
   };
 }
 
 // RegisterType that doesn't have a corresponding RegClass.
-static LegalityPredicate isIllegalRegisterType(unsigned TypeIdx) {
-  return [=](const LegalityQuery &Query) {
+static LegalityPredicate isIllegalRegisterType(unsigned TypeIdx, const GCNTargetMachine &TM) {
+  return [TypeIdx, &TM](const LegalityQuery &Query) {
     LLT Ty = Query.Types[TypeIdx];
-    return isRegisterType(Ty) &&
-           !SIRegisterInfo::getSGPRClassForBitWidth(Ty.getSizeInBits());
+    return !isRegType(Ty, TM);
   };
 }
 
@@ -420,22 +537,24 @@ static bool loadStoreBitcastWorkaround(const LLT Ty) {
   return EltSize != 32 && EltSize != 64;
 }
 
-static bool isLoadStoreLegal(const GCNSubtarget &ST, const LegalityQuery &Query) {
+static bool isLoadStoreLegal(const GCNSubtarget &ST, const LegalityQuery &Query,
+                             const GCNTargetMachine &TM) {
   const LLT Ty = Query.Types[0];
-  return isRegisterType(Ty) && isLoadStoreSizeLegal(ST, Query) &&
+  return isRegType(Ty, TM) && isLoadStoreSizeLegal(ST, Query) &&
          !hasBufferRsrcWorkaround(Ty) && !loadStoreBitcastWorkaround(Ty);
 }
 
 /// Return true if a load or store of the type should be lowered with a bitcast
 /// to a different type.
-static bool shouldBitcastLoadStoreType(const GCNSubtarget &ST, const LLT Ty,
+static bool shouldBitcastLoadStoreType(const GCNSubtarget &ST,
+                                       const GCNTargetMachine &TM, const LLT Ty,
                                        const LLT MemTy) {
   const unsigned MemSizeInBits = MemTy.getSizeInBits();
   const unsigned Size = Ty.getSizeInBits();
   if (Size != MemSizeInBits)
     return Size <= 32 && Ty.isVector();
 
-  if (loadStoreBitcastWorkaround(Ty) && isRegisterType(Ty))
+  if (loadStoreBitcastWorkaround(Ty) && isRegType(Ty, TM))
     return true;
 
   // Don't try to handle bitcasting vector ext loads for now.
@@ -566,67 +685,21 @@ static void castBufferRsrcArgToV4I32(MachineInstr &MI, MachineIRBuilder &B,
 }
 
 AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
-                                         const GCNTargetMachine &TM)
-  :  ST(ST_) {
+                                         const GCNTargetMachine &TM_)
+  :  ST(ST_), TM(TM_) {
   using namespace TargetOpcode;
 
-  auto GetAddrSpacePtr = [&TM](unsigned AS) {
-    return LLT::pointer(AS, TM.getPointerSizeInBits(AS));
+  auto GetAddrSpacePtr = [&TM_](unsigned AS) {
+    return LLT::pointer(AS, TM_.getPointerSizeInBits(AS));
   };
 
-  const LLT S1 = LLT::scalar(1);
-  const LLT S8 = LLT::scalar(8);
-  const LLT S16 = LLT::scalar(16);
-  const LLT S32 = LLT::scalar(32);
-  const LLT S64 = LLT::scalar(64);
-  const LLT S128 = LLT::scalar(128);
-  const LLT S256 = LLT::scalar(256);
-  const LLT S512 = LLT::scalar(512);
-  const LLT MaxScalar = LLT::scalar(MaxRegisterSize);
-
-  const LLT V2S8 = LLT::fixed_vector(2, 8);
-  const LLT V2S16 = LLT::fixed_vector(2, 16);
-  const LLT V4S16 = LLT::fixed_vector(4, 16);
-
-  const LLT V2S32 = LLT::fixed_vector(2, 32);
-  const LLT V3S32 = LLT::fixed_vector(3, 32);
-  const LLT V4S32 = LLT::fixed_vector(4, 32);
-  const LLT V5S32 = LLT::fixed_vector(5, 32);
-  const LLT V6S32 = LLT::fixed_vector(6, 32);
-  const LLT V7S32 = LLT::fixed_vector(7, 32);
-  const LLT V8S32 = LLT::fixed_vector(8, 32);
-  const LLT V9S32 = LLT::fixed_vector(9, 32);
-  const LLT V10S32 = LLT::fixed_vector(10, 32);
-  const LLT V11S32 = LLT::fixed_vector(11, 32);
-  const LLT V12S32 = LLT::fixed_vector(12, 32);
-  const LLT V13S32 = LLT::fixed_vector(13, 32);
-  const LLT V14S32 = LLT::fixed_vector(14, 32);
-  const LLT V15S32 = LLT::fixed_vector(15, 32);
-  const LLT V16S32 = LLT::fixed_vector(16, 32);
-  const LLT V32S32 = LLT::fixed_vector(32, 32);
-
-  const LLT V2S64 = LLT::fixed_vector(2, 64);
-  const LLT V3S64 = LLT::fixed_vector(3, 64);
-  const LLT V4S64 = LLT::fixed_vector(4, 64);
-  const LLT V5S64 = LLT::fixed_vector(5, 64);
-  const LLT V6S64 = LLT::fixed_vector(6, 64);
-  const LLT V7S64 = LLT::fixed_vector(7, 64);
-  const LLT V8S64 = LLT::fixed_vector(8, 64);
-  const LLT V16S64 = LLT::fixed_vector(16, 64);
-
-  std::initializer_list<LLT> AllS32Vectors =
-    {V2S32, V3S32, V4S32, V5S32, V6S32, V7S32, V8S32,
-     V9S32, V10S32, V11S32, V12S32, V13S32, V14S32, V15S32, V16S32, V32S32};
-  std::initializer_list<LLT> AllS64Vectors =
-    {V2S64, V3S64, V4S64, V5S64, V6S64, V7S64, V8S64, V16S64};
-
-  const LLT GlobalPtr = GetAddrSpacePtr(AMDGPUAS::GLOBAL_ADDRESS);
+  const LLT GlobalPtr = GetAddrSpacePtr(AMDGPUAS::GLOBAL_ADDRESS); // p1
   const LLT ConstantPtr = GetAddrSpacePtr(AMDGPUAS::CONSTANT_ADDRESS);
   const LLT Constant32Ptr = GetAddrSpacePtr(AMDGPUAS::CONSTANT_ADDRESS_32BIT);
   const LLT LocalPtr = GetAddrSpacePtr(AMDGPUAS::LOCAL_ADDRESS);
   const LLT RegionPtr = GetAddrSpacePtr(AMDGPUAS::REGION_ADDRESS);
   const LLT FlatPtr = GetAddrSpacePtr(AMDGPUAS::FLAT_ADDRESS);
-  const LLT PrivatePtr = GetAddrSpacePtr(AMDGPUAS::PRIVATE_ADDRESS);
+  const LLT PrivatePtr = GetAddrSpacePtr(AMDGPUAS::PRIVATE_ADDRESS); // p5
   const LLT BufferFatPtr = GetAddrSpacePtr(AMDGPUAS::BUFFER_FAT_POINTER);
   const LLT RsrcPtr = GetAddrSpacePtr(AMDGPUAS::BUFFER_RESOURCE);
 
@@ -811,7 +884,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
 
   getActionDefinitionsBuilder(G_BITCAST)
     // Don't worry about the size constraint.
-    .legalIf(all(isRegisterType(0), isRegisterType(1)))
+    .legalIf(all(isRegType(0, TM), isRegType(1, TM)))
     .lower();
 
 
@@ -827,7 +900,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     .clampScalar(0, S16, S64);
 
   getActionDefinitionsBuilder({G_IMPLICIT_DEF, G_FREEZE})
-      .legalIf(isRegisterType(0))
+      .legalIf(isRegType(0, TM))
       // s1 and s16 are special cases because they have legal operations on
       // them, but don't really occupy registers in the normal way.
       .legalFor({S1, S16})
@@ -1025,8 +1098,10 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
 
   // TODO: Do we need to clamp maximum bitwidth?
   getActionDefinitionsBuilder(G_TRUNC)
-    .legalIf(isScalar(0))
+    .legalIf(all(isScalar(0), isScalar(1), isRegType(0, TM), isRegType(1, TM)))
+    .legalIf(typeInSet(0, {S16}))
     .legalFor({{V2S16, V2S32}})
+    .widenScalarToNextPow2(1)
     .clampMaxNumElements(0, S16, 2)
     // Avoid scalarizing in cases that should be truly illegal. In unresolvable
     // situations (like an invalid implicit use), we don't want to infinite loop
@@ -1373,7 +1448,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
                                       {V2S32, ConstantPtr, V2S32, GlobalAlign32}});
     Actions.legalIf(
       [=](const LegalityQuery &Query) -> bool {
-        return isLoadStoreLegal(ST, Query);
+        return isLoadStoreLegal(ST, Query, TM);
       });
 
     // The custom pointers (fat pointers, buffer resources) don't work with load
@@ -1403,7 +1478,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     // 16-bit vector parts.
     Actions.bitcastIf(
       [=](const LegalityQuery &Query) -> bool {
-        return shouldBitcastLoadStoreType(ST, Query.Types[0],
+        return shouldBitcastLoadStoreType(ST, TM, Query.Types[0],
                                           Query.MMODescrs[0].MemoryTy);
       }, bitcastToRegisterType(0));
 
@@ -1522,7 +1597,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
                                                   {S32, ConstantPtr, S16, 2 * 8}})
                        .legalIf(
                          [=](const LegalityQuery &Query) -> bool {
-                           return isLoadStoreLegal(ST, Query);
+                           return isLoadStoreLegal(ST, Query, TM);
                          });
 
   if (ST.hasFlatAddressSpace()) {
@@ -1655,7 +1730,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     unsigned IdxTypeIdx = 2;
 
     getActionDefinitionsBuilder(Op)
-      .customIf([=](const LegalityQuery &Query) {
+        .customIf([=](const LegalityQuery &Query) {
           const LLT EltTy = Query.Types[EltTypeIdx];
           const LLT VecTy = Query.Types[VecTypeIdx];
           const LLT IdxTy = Query.Types[IdxTypeIdx];
@@ -1676,36 +1751,39 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
                   IdxTy.getSizeInBits() == 32 &&
                   isLegalVecType;
         })
-      .bitcastIf(all(sizeIsMultipleOf32(VecTypeIdx), scalarOrEltNarrowerThan(VecTypeIdx, 32)),
-                 bitcastToVectorElement32(VecTypeIdx))
-      //.bitcastIf(vectorSmallerThan(1, 32), bitcastToScalar(1))
-      .bitcastIf(
-        all(sizeIsMultipleOf32(VecTypeIdx), scalarOrEltWiderThan(VecTypeIdx, 64)),
-        [=](const LegalityQuery &Query) {
-          // For > 64-bit element types, try to turn this into a 64-bit
-          // element vector since we may be able to do better indexing
-          // if this is scalar. If not, fall back to 32.
-          const LLT EltTy = Query.Types[EltTypeIdx];
-          const LLT VecTy = Query.Types[VecTypeIdx];
-          const unsigned DstEltSize = EltTy.getSizeInBits();
-          const unsigned VecSize = VecTy.getSizeInBits();
+        .bitcastIf(all(sizeIsMultipleOf32(VecTypeIdx),
+                       scalarOrEltNarrowerThan(VecTypeIdx, 32)),
+                   bitcastToVectorElement32(VecTypeIdx))
+        .bitcastIf(all(sizeIsMultipleOf32(VecTypeIdx),
+                       scalarOrEltWiderThan(VecTypeIdx, 64)),
+                   [=](const LegalityQuery &Query) {
+                     // For > 64-bit element types, try to turn this into a
+                     // 64-bit element vector since we may be able to do better
+                     // indexing if this is scalar. If not, fall back to 32.
+                     const LLT EltTy = Query.Types[EltTypeIdx];
+                     const LLT VecTy = Query.Types[VecTypeIdx];
+                     const unsigned DstEltSize = EltTy.getSizeInBits();
+                     const unsigned VecSize = VecTy.getSizeInBits();
 
-          const unsigned TargetEltSize = DstEltSize % 64 == 0 ? 64 : 32;
-          return std::pair(
-              VecTypeIdx,
-              LLT::fixed_vector(VecSize / TargetEltSize, TargetEltSize));
-        })
-      .clampScalar(EltTypeIdx, S32, S64)
-      .clampScalar(VecTypeIdx, S32, S64)
-      .clampScalar(IdxTypeIdx, S32, S32)
-      .clampMaxNumElements(VecTypeIdx, S32, 32)
-      // TODO: Clamp elements for 64-bit vectors?
-      .moreElementsIf(
-        isIllegalRegisterType(VecTypeIdx),
-        moreElementsToNextExistingRegClass(VecTypeIdx))
-      // It should only be necessary with variable indexes.
-      // As a last resort, lower to the stack
-      .lower();
+                     const unsigned TargetEltSize =
+                         DstEltSize % 64 == 0 ? 64 : 32;
+                     return std::pair(VecTypeIdx,
+                                      LLT::fixed_vector(VecSize / TargetEltSize,
+                                                        TargetEltSize));
+                   })
+        .clampScalar(EltTypeIdx, S32, S64)
+        .clampScalar(VecTypeIdx, S32, S64)
+        .clampScalar(IdxTypeIdx, S32, S32)
+        .clampMaxNumElements(VecTypeIdx, S32, 32)
+        // TODO: Clamp elements for 64-bit vectors?
+        .moreElementsIf(
+            all(any(eltSizeIs(VecTypeIdx, 32), eltSizeIs(VecTypeIdx, 64)),
+                isIllegalRegisterType(VecTypeIdx, TM),
+                vectorSmallerThan(VecTypeIdx, MaxRegisterSize)),
+            moreElementsToNextExistingRegClass(VecTypeIdx))
+        // It should only be necessary with variable indexes.
+        // As a last resort, lower to the stack
+        .lower();
   }
 
   getActionDefinitionsBuilder(G_EXTRACT_VECTOR_ELT)
@@ -1752,15 +1830,15 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
 
   }
 
-  auto &BuildVector = getActionDefinitionsBuilder(G_BUILD_VECTOR)
-    .legalForCartesianProduct(AllS32Vectors, {S32})
-    .legalForCartesianProduct(AllS64Vectors, {S64})
-    .clampNumElements(0, V16S32, V32S32)
-    .clampNumElements(0, V2S64, V16S64)
-    .fewerElementsIf(isWideVec16(0), changeTo(0, V2S16))
-    .moreElementsIf(
-      isIllegalRegisterType(0),
-      moreElementsToNextExistingRegClass(0));
+  auto &BuildVector =
+      getActionDefinitionsBuilder(G_BUILD_VECTOR)
+          .legalForCartesianProduct(AllS32Vectors, {S32})
+          .legalForCartesianProduct(AllS64Vectors, {S64})
+          .fewerElementsIf(isWideVec16(0), changeTo(0, V2S16))
+          .moreElementsIf(all(any(eltSizeIs(0, 32), eltSizeIs(0, 64)),
+                              isIllegalRegisterType(0, TM),
+                              vectorSmallerThan(0, MaxRegisterSize)),
+                          moreElementsToNextExistingRegClass(0));
 
   if (ST.hasScalarPackInsts()) {
     BuildVector
@@ -1780,11 +1858,11 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
       .lower();
   }
 
-  BuildVector.legalIf(isRegisterType(0));
+  BuildVector.legalIf(isRegType(0, TM));
 
   // FIXME: Clamp maximum size
   getActionDefinitionsBuilder(G_CONCAT_VECTORS)
-    .legalIf(all(isRegisterType(0), isRegisterType(1)))
+    .legalIf(all(isRegType(0, TM), isRegType(1, TM)))
     .clampMaxNumElements(0, S32, 32)
     .clampMaxNumElements(1, S16, 2) // TODO: Make 4?
     .clampMaxNumElements(0, S16, 64);
@@ -1800,7 +1878,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
       const LLT Ty = Query.Types[TypeIdx];
       if (Ty.isVector()) {
         const LLT &EltTy = Ty.getElementType();
-        if (EltTy.getSizeInBits() < 8 || EltTy.getSizeInBits() > 512)
+        if (EltTy.getSizeInBits() < 16 || EltTy.getSizeInBits() > 512)
           return true;
         if (!llvm::has_single_bit<uint32_t>(EltTy.getSizeInBits()))
           return true;
@@ -1808,34 +1886,40 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
       return false;
     };
 
-    auto &Builder = getActionDefinitionsBuilder(Op)
-      .legalIf(all(isRegisterType(0), isRegisterType(1)))
-      .lowerFor({{S16, V2S16}})
-      .lowerIf([=](const LegalityQuery &Query) {
-          const LLT BigTy = Query.Types[BigTyIdx];
-          return BigTy.getSizeInBits() == 32;
-        })
-      // Try to widen to s16 first for small types.
-      // TODO: Only do this on targets with legal s16 shifts
-      .minScalarOrEltIf(scalarNarrowerThan(LitTyIdx, 16), LitTyIdx, S16)
-      .widenScalarToNextPow2(LitTyIdx, /*Min*/ 16)
-      .moreElementsIf(isSmallOddVector(BigTyIdx), oneMoreElement(BigTyIdx))
-      .fewerElementsIf(all(typeIs(0, S16), vectorWiderThan(1, 32),
-                           elementTypeIs(1, S16)),
-                       changeTo(1, V2S16))
-      // Clamp the little scalar to s8-s256 and make it a power of 2. It's not
-      // worth considering the multiples of 64 since 2*192 and 2*384 are not
-      // valid.
-      .clampScalar(LitTyIdx, S32, S512)
-      .widenScalarToNextPow2(LitTyIdx, /*Min*/ 32)
-      // Break up vectors with weird elements into scalars
-      .fewerElementsIf(
-        [=](const LegalityQuery &Query) { return notValidElt(Query, LitTyIdx); },
-        scalarize(0))
-      .fewerElementsIf(
-        [=](const LegalityQuery &Query) { return notValidElt(Query, BigTyIdx); },
-        scalarize(1))
-      .clampScalar(BigTyIdx, S32, MaxScalar);
+    auto &Builder =
+        getActionDefinitionsBuilder(Op)
+            .lowerFor({{S16, V2S16}})
+            .lowerIf([=](const LegalityQuery &Query) {
+              const LLT BigTy = Query.Types[BigTyIdx];
+              return BigTy.getSizeInBits() == 32;
+            })
+            .legalIf(all(isRegType(0, TM), isRegType(1, TM), typeIsNot(LitTyIdx, S16)))
+            // Try to widen to s16 first for small types.
+            // TODO: Only do this on targets with legal s16 shifts
+            .minScalarOrEltIf(scalarNarrowerThan(LitTyIdx, 16), LitTyIdx, S16)
+            .widenScalarToNextPow2(LitTyIdx, /*Min*/ 16)
+            .moreElementsIf(isSmallOddVector(BigTyIdx),
+                            oneMoreElement(BigTyIdx))
+            .fewerElementsIf(all(typeIs(0, S16), vectorWiderThan(1, 32),
+                                 elementTypeIs(1, S16)),
+                             changeTo(1, V2S16))
+            // Clamp the little scalar to s8-s256 and make it a power of 2. It's
+            // not worth considering the multiples of 64 since 2*192 and 2*384
+            // are not valid.
+            .clampScalar(LitTyIdx, S32, S512)
+            .widenScalarToNextPow2(LitTyIdx, /*Min*/ 32)
+            // Break up vectors with weird elements into scalars
+            .fewerElementsIf(
+                [=](const LegalityQuery &Query) {
+                  return notValidElt(Query, LitTyIdx);
+                },
+                scalarize(0))
+            .fewerElementsIf(
+                [=](const LegalityQuery &Query) {
+                  return notValidElt(Query, BigTyIdx);
+                },
+                scalarize(1))
+            .clampScalar(BigTyIdx, S32, MaxScalar);
 
     if (Op == G_MERGE_VALUES) {
       Builder.widenScalarIf(
@@ -1847,26 +1931,32 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
         changeTo(LitTyIdx, S32));
     }
 
-    Builder.widenScalarIf(
-      [=](const LegalityQuery &Query) {
-        const LLT Ty = Query.Types[BigTyIdx];
-        return Ty.getSizeInBits() % 16 != 0;
-      },
-      [=](const LegalityQuery &Query) {
-        // Pick the next power of 2, or a multiple of 64 over 128.
-        // Whichever is smaller.
-        const LLT &Ty = Query.Types[BigTyIdx];
-        unsigned NewSizeInBits = 1 << Log2_32_Ceil(Ty.getSizeInBits() + 1);
-        if (NewSizeInBits >= 256) {
-          unsigned RoundedTo = alignTo<64>(Ty.getSizeInBits() + 1);
-          if (RoundedTo < NewSizeInBits)
-            NewSizeInBits = RoundedTo;
-        }
-        return std::pair(BigTyIdx, LLT::scalar(NewSizeInBits));
-      })
-      // Any vectors left are the wrong size. Scalarize them.
-      .scalarize(0)
-      .scalarize(1);
+    Builder
+        .widenScalarIf(
+            [=](const LegalityQuery &Query) {
+              const LLT Ty = Query.Types[BigTyIdx];
+              return Ty.getSizeInBits() % 16 != 0;
+            },
+            [=](const LegalityQuery &Query) {
+              // Pick the next power of 2, or a multiple of 64 over 128.
+              // Whichever is smaller.
+              const LLT &Ty = Query.Types[BigTyIdx];
+              unsigned NewSizeInBits = 1
+                                       << Log2_32_Ceil(Ty.getSizeInBits() + 1);
+              if (NewSizeInBits >= 256) {
+                unsigned RoundedTo = alignTo<64>(Ty.getSizeInBits() + 1);
+                if (RoundedTo < NewSizeInBits)
+                  NewSizeInBits = RoundedTo;
+              }
+              return std::pair(BigTyIdx, LLT::scalar(NewSizeInBits));
+            })
+        // Any vectors left are the wrong size. Scalarize them.
+        .moreElementsIf(all(isVector(BigTyIdx),
+                            isIllegalRegisterType(BigTyIdx, TM),
+                            vectorSmallerThan(BigTyIdx, MaxRegisterSize)),
+                            moreElementsToNextExistingRegClass(BigTyIdx))
+        .scalarize(0)
+        .scalarize(1);
   }
 
   // S64 is only legal on SALU, and needs to be broken into 32-bit elements in
@@ -2935,7 +3025,7 @@ bool AMDGPULegalizerInfo::legalizeLoad(LegalizerHelper &Helper,
     } else {
       // Extract the subvector.
 
-      if (isRegisterType(ValTy)) {
+      if (isRegType(ValTy, TM)) {
         // If this a case where G_EXTRACT is legal, use it.
         // (e.g. <3 x s32> -> <4 x s32>)
         WideLoad = B.buildLoadFromOffset(WideTy, PtrReg, *MMO, 0).getReg(0);
@@ -6372,7 +6462,7 @@ bool AMDGPULegalizerInfo::legalizeSBufferLoad(
     Ty = castBufferRsrcFromV4I32(MI, B, *B.getMRI(), 0);
     B.setInsertPt(B.getMBB(), MI);
   }
-  if (shouldBitcastLoadStoreType(ST, Ty, LLT::scalar(Size))) {
+  if (shouldBitcastLoadStoreType(ST, TM, Ty, LLT::scalar(Size))) {
     Ty = getBitcastRegisterType(Ty);
     Helper.bitcastDst(MI, Ty, 0);
     B.setInsertPt(B.getMBB(), MI);
