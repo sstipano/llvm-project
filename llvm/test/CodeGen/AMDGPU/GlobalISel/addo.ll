@@ -745,10 +745,10 @@ define amdgpu_ps <2 x i32> @s_saddo_v2i32(<2 x i32> inreg %a, <2 x i32> inreg %b
 ; GFX7-NEXT:    s_cselect_b32 s1, 1, 0
 ; GFX7-NEXT:    s_cmp_lt_i32 s2, 0
 ; GFX7-NEXT:    s_cselect_b32 s2, 1, 0
-; GFX7-NEXT:    s_cmp_lt_i32 s3, 0
-; GFX7-NEXT:    s_cselect_b32 s3, 1, 0
 ; GFX7-NEXT:    s_xor_b32 s0, s2, s0
-; GFX7-NEXT:    s_xor_b32 s1, s3, s1
+; GFX7-NEXT:    s_cmp_lt_i32 s3, 0
+; GFX7-NEXT:    s_cselect_b32 s2, 1, 0
+; GFX7-NEXT:    s_xor_b32 s1, s2, s1
 ; GFX7-NEXT:    s_and_b32 s0, s0, 1
 ; GFX7-NEXT:    s_and_b32 s1, s1, 1
 ; GFX7-NEXT:    s_add_i32 s0, s4, s0
@@ -765,10 +765,10 @@ define amdgpu_ps <2 x i32> @s_saddo_v2i32(<2 x i32> inreg %a, <2 x i32> inreg %b
 ; GFX8-NEXT:    s_cselect_b32 s1, 1, 0
 ; GFX8-NEXT:    s_cmp_lt_i32 s2, 0
 ; GFX8-NEXT:    s_cselect_b32 s2, 1, 0
-; GFX8-NEXT:    s_cmp_lt_i32 s3, 0
-; GFX8-NEXT:    s_cselect_b32 s3, 1, 0
 ; GFX8-NEXT:    s_xor_b32 s0, s2, s0
-; GFX8-NEXT:    s_xor_b32 s1, s3, s1
+; GFX8-NEXT:    s_cmp_lt_i32 s3, 0
+; GFX8-NEXT:    s_cselect_b32 s2, 1, 0
+; GFX8-NEXT:    s_xor_b32 s1, s2, s1
 ; GFX8-NEXT:    s_and_b32 s0, s0, 1
 ; GFX8-NEXT:    s_and_b32 s1, s1, 1
 ; GFX8-NEXT:    s_add_i32 s0, s4, s0
@@ -785,10 +785,10 @@ define amdgpu_ps <2 x i32> @s_saddo_v2i32(<2 x i32> inreg %a, <2 x i32> inreg %b
 ; GFX9-NEXT:    s_cselect_b32 s1, 1, 0
 ; GFX9-NEXT:    s_cmp_lt_i32 s2, 0
 ; GFX9-NEXT:    s_cselect_b32 s2, 1, 0
-; GFX9-NEXT:    s_cmp_lt_i32 s3, 0
-; GFX9-NEXT:    s_cselect_b32 s3, 1, 0
 ; GFX9-NEXT:    s_xor_b32 s0, s2, s0
-; GFX9-NEXT:    s_xor_b32 s1, s3, s1
+; GFX9-NEXT:    s_cmp_lt_i32 s3, 0
+; GFX9-NEXT:    s_cselect_b32 s2, 1, 0
+; GFX9-NEXT:    s_xor_b32 s1, s2, s1
 ; GFX9-NEXT:    s_and_b32 s0, s0, 1
 ; GFX9-NEXT:    s_and_b32 s1, s1, 1
 ; GFX9-NEXT:    s_add_i32 s0, s4, s0
