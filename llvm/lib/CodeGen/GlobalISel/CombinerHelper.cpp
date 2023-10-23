@@ -32,6 +32,7 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/DivisionByConstantInfo.h"
+#include "llvm/Support/InstructionCost.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Target/TargetMachine.h"
 #include <cmath>
@@ -5097,6 +5098,76 @@ void CombinerHelper::applyUMulHToLShr(MachineInstr &MI) {
   MI.eraseFromParent();
 }
 
+static MachineInstr *getPrevOperandForReg(const MachineOperand &MO,
+                                     const MachineRegisterInfo *MRI) {
+  const MachineInstr *MI = MO.getParent();
+  // const MachineBasicBlock *MBB = MI->getParent();
+  for (MachineRegisterInfo::reg_iterator I = MRI->reg_begin(MO.getReg()),
+                                         E = MRI->reg_end();
+       I != E;) {
+    MachineOperand &O = *I;
+    ++I;
+    if (MI == I->getParent()){
+      // if(MBB == I->getParent()->getParent())
+      return O.getParent();
+      // return nullptr;
+    }
+  }
+
+  return nullptr;
+}
+
+// Register getNegatedExpression(MachineOperand *MO, TargetLowering::NegatibleCost &Cost){
+//   switch (MO->getParent()->getOpcode()){
+//     case TargetOpcode::G_FMUL:
+//     case TargetOpcode::G_FDIV:{
+      
+//     }
+//     default:
+//       return MO->getReg();
+
+//   }
+// }
+static Register getNegatedExpression(MachineInstr *MI,
+                                     TargetLowering::NegatibleCost &Cost,
+                                     MachineRegisterInfo *MRI) {
+  if (MI->getOpcode() == TargetOpcode::G_FNEG) {
+    Cost = llvm::TargetLoweringBase::NegatibleCost::Cheaper;
+    return MI->getOperand(1).getReg();
+  }
+  switch (MI->getOpcode()) {
+  case TargetOpcode::G_FMUL:
+  case TargetOpcode::G_FDIV: {
+    MachineInstr *X = getPrevOperandForReg(MI->getOperand(1), MRI);
+    llvm::TargetLoweringBase::NegatibleCost CostX =
+        llvm::TargetLoweringBase::NegatibleCost::Expensive;
+    Register NegX = getNegatedExpression(X, CostX, MRI);
+
+    MachineInstr *Y = getPrevOperandForReg(MI->getOperand(2), MRI);
+    llvm::TargetLoweringBase::NegatibleCost CostY =
+        llvm::TargetLoweringBase::NegatibleCost::Expensive;
+    Register NegY = getNegatedExpression(Y, CostY, MRI);
+
+    if(CostX <= CostY){
+      if(NegX != MI->getOperand(1).getReg()){
+        Cost = CostX;
+        MI->getOperand(1).setReg(NegX);
+        return NegX;
+      }
+    }
+
+    if(NegY != MI->getOperand(2).getReg()){
+      Cost = CostY;
+      MI->getOperand(2).setReg(NegY);
+      return NegY;
+    }
+    return MI->getOperand(0).getReg();
+  }
+  default:
+    return MI->getOperand(0).getReg();
+  }
+}
+
 bool CombinerHelper::matchRedundantNegOperands(MachineInstr &MI,
                                                BuildFnTy &MatchInfo) {
   unsigned Opc = MI.getOpcode();
@@ -5130,7 +5201,21 @@ bool CombinerHelper::matchRedundantNegOperands(MachineInstr &MI,
            mi_match(X, MRI, m_GFNeg(m_Reg(X))) &&
            mi_match(Y, MRI, m_GFNeg(m_Reg(Y)))) {
     // no opcode change
-  } else
+  }
+  else if (Opc == TargetOpcode::G_FMUL || Opc == TargetOpcode::G_FDIV){
+        llvm::TargetLoweringBase::NegatibleCost CostMI =
+        llvm::TargetLoweringBase::NegatibleCost::Expensive;
+      Register NegMI = getNegatedExpression(&MI, CostMI, &MRI);
+      if (NegMI == MI.getOperand(0).getReg())
+        return false;
+
+      MatchInfo = [=, &MI](MachineIRBuilder &B){
+        Observer.changingInstr(MI);
+        Observer.changedInstr(MI);
+      };
+      return true;
+  }
+  else
     return false;
 
   MatchInfo = [=, &MI](MachineIRBuilder &B) {
