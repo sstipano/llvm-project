@@ -229,7 +229,9 @@ namespace {
     /// registered and hasn't been clobbered, the virt->phys copy can be
     /// deleted.
     bool foldRedundantNAPhysCopy(
-        MachineInstr &MI, DenseMap<Register, MachineInstr *> &NAPhysToVirtMIs);
+        MachineInstr &MI, DenseMap<Register, MachineInstr *> &NAPhysToVirtMIs,
+        SmallVector<std::pair<MachineInstr *, MachineBasicBlock::iterator>, 4>
+            HoistableNAPhysCopy);
 
     bool isLoadFoldable(MachineInstr &MI,
                         SmallSet<Register, 16> &FoldAsLoadDefCandidates);
@@ -255,6 +257,12 @@ namespace {
 
     MachineInstr &rewriteSource(MachineInstr &CopyLike,
                                 RegSubRegPair Def, RewriteMapTy &RewriteMap);
+
+    bool checkInsertionPoint(const MachineInstr *MI, const MachineInstr *TmpMI,
+                             bool &ShouldStop);
+
+    MachineBasicBlock::iterator findInsertionPoint(MachineBasicBlock &MBB,
+                                                   const MachineInstr *MI);
   };
 
   /// Helper class to hold instructions that are inside recurrence cycles.
@@ -1450,7 +1458,9 @@ bool PeepholeOptimizer::isNAPhysCopy(Register Reg) {
 }
 
 bool PeepholeOptimizer::foldRedundantNAPhysCopy(
-    MachineInstr &MI, DenseMap<Register, MachineInstr *> &NAPhysToVirtMIs) {
+    MachineInstr &MI, DenseMap<Register, MachineInstr *> &NAPhysToVirtMIs,
+    SmallVector<std::pair<MachineInstr *, MachineBasicBlock::iterator>, 4>
+        HoistableNAPhysCopy) {
   assert(MI.isCopy() && "expected a COPY machine instruction");
 
   if (DisableNAPhysCopyOpt)
@@ -1483,6 +1493,21 @@ bool PeepholeOptimizer::foldRedundantNAPhysCopy(
   if (PrevDstReg == SrcReg) {
     // Remove the virt->phys copy: we saw the virtual register definition, and
     // the non-allocatable physical register's state hasn't changed since then.
+    MachineBasicBlock *MBB = MI.getParent();
+    MachineFunction *MF = MBB->getParent();
+    for (auto Pair : HoistableNAPhysCopy) {
+      MachineInstr *HoistableMI = Pair.first;
+      MachineBasicBlock::iterator DefIterator = Pair.second;
+      if (DefIterator == MBB->end())
+        continue;
+      LLVM_DEBUG(dbgs() << "NAPhysCopy: Hoisting: " << *HoistableMI
+                        << "\tbefore: " << *DefIterator);
+      MachineInstr *NewMI = MF->CloneMachineInstr(HoistableMI);
+      HoistableMI->eraseFromParent();
+      MBB->insert(DefIterator, NewMI);
+      LLVM_DEBUG(dbgs() << "NAPhysCopy: successfully hoisted "
+                           "problematic def\n");
+    }
     LLVM_DEBUG(dbgs() << "NAPhysCopy: erasing " << MI);
     ++NumNAPhysCopies;
     return true;
@@ -1602,6 +1627,73 @@ bool PeepholeOptimizer::optimizeRecurrence(MachineInstr &PHI) {
   return Changed;
 }
 
+// If any of the defs from TmpMI is a use from MI, then we cannot insert MI
+// before TmpMI
+bool PeepholeOptimizer::checkInsertionPoint(const MachineInstr *MI,
+                                            const MachineInstr *TmpMI,
+                                            bool &ShouldStop) {
+  if (MI == TmpMI)
+    return false;
+
+  for (const MachineOperand &MO : MI->uses()) {
+    if (!MO.isReg())
+      continue;
+    for (const MachineOperand &TmpMO : TmpMI->defs()) {
+      if (!TmpMO.isReg())
+        continue;
+      if (TmpMO.getReg() == MO.getReg()) {
+        ShouldStop = true;
+        return false;
+      }
+    }
+  }
+
+  for (const MachineOperand &MO : TmpMI->all_defs())
+    if (!isNAPhysCopy(MO.getReg()))
+      return false;
+
+  return true;
+}
+
+MachineBasicBlock::iterator
+PeepholeOptimizer::findInsertionPoint(MachineBasicBlock &MBB,
+                                      const MachineInstr *MI) {
+  bool CheckDef = false;
+  bool ShouldStop = false;
+  for (auto &TmpMI : reverse(MBB)) {
+    if (MI == &TmpMI)
+      CheckDef = true;
+    if (!CheckDef)
+      continue;
+
+    if (checkInsertionPoint(MI, &TmpMI, ShouldStop))
+      return MachineBasicBlock::iterator(TmpMI);
+    if (ShouldStop)
+      return MBB.end();
+  }
+
+  return MBB.end();
+}
+
+MachineOperand *getNextOperandForReg(const MachineOperand &MO,
+                                     const MachineRegisterInfo *MRI) {
+  const MachineInstr *MI = MO.getParent();
+  const MachineBasicBlock *MBB = MI->getParent();
+  for (MachineRegisterInfo::reg_iterator I = MRI->reg_begin(MO.getReg()),
+                                         E = MRI->reg_end();
+       I != E;) {
+    const MachineOperand &O = *I;
+    ++I;
+    if (MI == O.getParent()){
+      if(MBB == I->getParent()->getParent())
+        return &*I;
+      return nullptr;
+    }
+  }
+
+  return nullptr;
+}
+
 bool PeepholeOptimizer::runOnMachineFunction(MachineFunction &MF) {
   if (skipFunction(MF.getFunction()))
     return false;
@@ -1641,6 +1733,10 @@ bool PeepholeOptimizer::runOnMachineFunction(MachineFunction &MF) {
     // without any intervening re-definition of $physreg.
     DenseMap<Register, MachineInstr *> NAPhysToVirtMIs;
 
+    // Instructions that can be hoisted to enable NAPhysCopy  removal.
+    SmallVector<std::pair<MachineInstr *, MachineBasicBlock::iterator>, 4>
+        HoistableMIs;
+
     // Set of copies to virtual registers keyed by source register.  Never
     // holds any physreg which requires def tracking.
     DenseMap<RegSubRegPair, MachineInstr *> CopySrcMIs;
@@ -1669,19 +1765,49 @@ bool PeepholeOptimizer::runOnMachineFunction(MachineFunction &MF) {
         }
       }
 
+      MachineBasicBlock::iterator DefIterator = MBB.end();
       if (!MI->isCopy()) {
         for (const MachineOperand &MO : MI->operands()) {
           // Visit all operands: definitions can be implicit or explicit.
           if (MO.isReg()) {
             Register Reg = MO.getReg();
-            if (MO.isDef() && isNAPhysCopy(Reg)) {
+            if (isNAPhysCopy(Reg)) {
               const auto &Def = NAPhysToVirtMIs.find(Reg);
               if (Def != NAPhysToVirtMIs.end()) {
+                if (MO.isImplicit() && MO.isUse()){
+                   LLVM_DEBUG(dbgs()
+                             << "NAPhysCopy: invalidating because of " << *MI);
+                  NAPhysToVirtMIs.erase(Def);
+                  DefIterator = MBB.end();
+                  continue;
+                }
+                if(!MO.isDef())
+                  continue;
                 // A new definition of the non-allocatable physical register
                 // invalidates previous copies.
                 LLVM_DEBUG(dbgs()
-                           << "NAPhysCopy: invalidating because of " << *MI);
-                NAPhysToVirtMIs.erase(Def);
+                           << "NAPhysCopy: Original def: " << *Def->second);
+                LLVM_DEBUG(dbgs()
+                           << "NAPhysCopy: Try to hoist problematic def\n");
+                bool SawStore = false;
+                MachineOperand *NextMO = getNextOperandForReg(MO, MRI);
+                if (MO.isDead() && NextMO && NextMO->isDef()) {
+                  if (MI->isSafeToMove(nullptr, SawStore)) {
+                    DefIterator = findInsertionPoint(MBB, MI);
+                    if (DefIterator == MBB.end()) {
+                      LLVM_DEBUG(dbgs()
+                                 << "NAPhysCopy: invalidating because of "
+                                 << *MI);
+                      NAPhysToVirtMIs.erase(Def);
+                    } else {
+                      HoistableMIs.push_back(std::make_pair(MI, DefIterator));
+                    }
+                  }
+                } else {
+                  LLVM_DEBUG(dbgs()
+                             << "NAPhysCopy: invalidating because of " << *MI);
+                  NAPhysToVirtMIs.erase(Def);
+                }
               }
             }
           } else if (MO.isRegMask()) {
@@ -1732,8 +1858,9 @@ bool PeepholeOptimizer::runOnMachineFunction(MachineFunction &MF) {
         continue;
       }
 
-      if (MI->isCopy() && (foldRedundantCopy(*MI, CopySrcMIs) ||
-                           foldRedundantNAPhysCopy(*MI, NAPhysToVirtMIs))) {
+      if (MI->isCopy() &&
+          (foldRedundantCopy(*MI, CopySrcMIs) ||
+           foldRedundantNAPhysCopy(*MI, NAPhysToVirtMIs, HoistableMIs))) {
         LocalMIs.erase(MI);
         LLVM_DEBUG(dbgs() << "Deleting redundant copy: " << *MI << "\n");
         MI->eraseFromParent();
@@ -1744,12 +1871,15 @@ bool PeepholeOptimizer::runOnMachineFunction(MachineFunction &MF) {
       if (isMoveImmediate(*MI, ImmDefRegs, ImmDefMIs)) {
         SeenMoveImm = true;
       } else {
-        Changed |= optimizeExtInstr(*MI, MBB, LocalMIs);
+        bool ChangedExt = optimizeExtInstr(*MI, MBB, LocalMIs);
+        Changed |= ChangedExt;
         // optimizeExtInstr might have created new instructions after MI
         // and before the already incremented MII. Adjust MII so that the
         // next iteration sees the new instructions.
-        MII = MI;
-        ++MII;
+        if (Changed) {
+          MII = MI;
+          ++MII;
+        }
         if (SeenMoveImm)
           Changed |= foldImmediate(*MI, ImmDefRegs, ImmDefMIs);
       }
