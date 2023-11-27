@@ -675,6 +675,7 @@ class AMDGPUDimProfile<string opmod,
   bit ZCompare = false;
   bit Gradients = false;
   string LodClampMip = "";
+  bit IsAtomicLoad = false;
 
   int NumRetAndDataAnyTypes =
     !foldl(0, !listconcat(RetTypes, !foreach(arg, DataArgs, arg.Type)), a, b,
@@ -731,10 +732,12 @@ class AMDGPUDimNoSampleProfile<string opmod,
                                AMDGPUDimProps dim,
                                list<LLVMType> retty,
                                list<AMDGPUArg> dataargs,
-                               bit Mip = false> : AMDGPUDimProfile<opmod, dim> {
+                               bit Mip = false,
+                               bit AtomicLoad = false> : AMDGPUDimProfile<opmod, dim> {
   let RetTypes = retty;
   let DataArgs = dataargs;
   let LodClampMip = !if(Mip, "mip", "");
+  let IsAtomicLoad = AtomicLoad;
 }
 
 class AMDGPUDimAtomicProfile<string opmod,
@@ -786,6 +789,7 @@ class AMDGPUImageDimIntrinsicEval<AMDGPUDimProfile P_> {
   int UnormArgIndex = !add(SampArgIndex, 1);
   int TexFailCtrlArgIndex = !add(SampArgIndex, NumSampArgs);
   int CachePolicyArgIndex = !add(TexFailCtrlArgIndex, 1);
+  int AtomicOrderingIndex = !add(CachePolicyArgIndex, !if(!or(P_.IsAtomic, P_.IsAtomicLoad), 1, 0));
 }
 
 // All dimension-aware intrinsics are derived from this class.
@@ -801,13 +805,15 @@ class AMDGPUImageDimIntrinsic<AMDGPUDimProfile P_,
       !if(P_.IsSample, [llvm_v4i32_ty,           // samp(SGPR)
                         llvm_i1_ty], []),        // unorm(imm)
       [llvm_i32_ty,                              // texfailctrl(imm; bit 0 = tfe, bit 1 = lwe)
-       llvm_i32_ty]),                            // cachepolicy(imm; bit 0 = glc, bit 1 = slc, bit 2 = dlc)
+       llvm_i32_ty],                             // cachepolicy(imm; bit 0 = glc, bit 1 = slc, bit 2 = dlc)
+      !if(!or(P_.IsAtomic, P_.IsAtomicLoad), [llvm_i32_ty], [])),       // atomic ordering
 
      !listconcat(props,
           !if(P_.IsAtomic, [], [ImmArg<ArgIndex<AMDGPUImageDimIntrinsicEval<P_>.DmaskArgIndex>>]),
           !if(P_.IsSample, [ImmArg<ArgIndex<AMDGPUImageDimIntrinsicEval<P_>.UnormArgIndex>>], []),
           [ImmArg<ArgIndex<AMDGPUImageDimIntrinsicEval<P_>.TexFailCtrlArgIndex>>,
-           ImmArg<ArgIndex<AMDGPUImageDimIntrinsicEval<P_>.CachePolicyArgIndex>>]),
+           ImmArg<ArgIndex<AMDGPUImageDimIntrinsicEval<P_>.CachePolicyArgIndex>>],
+          !if(!or(P_.IsAtomic, P_.IsAtomicLoad), [ImmArg<ArgIndex<AMDGPUImageDimIntrinsicEval<P_>.AtomicOrderingIndex>>], [])),
 
 
       "", sdnodeprops>,
@@ -852,13 +858,17 @@ defset list<AMDGPUImageDimIntrinsic> AMDGPUImageDimIntrinsics = {
     foreach dim = AMDGPUDims.All in {
       def !strconcat(NAME, "_", dim.Name)
         : AMDGPUImageDimIntrinsic<
-            AMDGPUDimNoSampleProfile<opmod, dim, retty, dataargs, Mip>,
+            AMDGPUDimNoSampleProfile<opmod, dim, retty, dataargs, Mip, !eq(NAME, "int_amdgcn_image_atomic_load")>,
             props, sdnodeprops>;
     }
   }
 
   defm int_amdgcn_image_load
     : AMDGPUImageDimIntrinsicsAll<"LOAD", [llvm_any_ty], [], [IntrReadMem],
+                                  [SDNPMemOperand]>,
+      AMDGPUImageDMaskIntrinsic;
+  defm int_amdgcn_image_atomic_load
+    : AMDGPUImageDimIntrinsicsAll<"LOAD", [llvm_any_ty], [], [],
                                   [SDNPMemOperand]>,
       AMDGPUImageDMaskIntrinsic;
   defm int_amdgcn_image_load_mip

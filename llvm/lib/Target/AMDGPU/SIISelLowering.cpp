@@ -19,6 +19,7 @@
 #include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "SIMachineFunctionInfo.h"
 #include "SIRegisterInfo.h"
+#include "Utils/AMDGPUBaseInfo.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/Statistic.h"
@@ -39,6 +40,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/IR/IntrinsicsR600.h"
+#include "llvm/Support/AtomicOrdering.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/ModRef.h"
@@ -1110,6 +1112,13 @@ bool SITargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
 
       // XXX - Should this be volatile without known ordering?
       Info.flags |= MachineMemOperand::MOVolatile;
+
+      if (RsrcIntr->IsImage) {
+        auto Idx = CI.arg_size() - 1;
+        unsigned OrderingArg =
+            cast<ConstantInt>(CI.getArgOperand(Idx))->getZExtValue();
+        Info.ordering = static_cast<AtomicOrdering>(OrderingArg);
+      }
 
       switch (IntrID) {
       default:

@@ -14,8 +14,8 @@
 ; GFX11-ERR: LLVM ERROR: Cannot select: intrinsic %llvm.amdgcn.image.atomic.f
 ; G_GFX11-ERR: LLVM ERROR: cannot select: {{.*}} = G_AMDGPU_INTRIN_IMAGE_LOAD intrinsic(@llvm.amdgcn.image.atomic.f
 
-declare float @llvm.amdgcn.image.atomic.fmin.1d.f32.f32(float, i32, <8 x i32>, i32, i32)
-declare float @llvm.amdgcn.image.atomic.fmax.1d.f32.f32(float, i32, <8 x i32>, i32, i32)
+declare float @llvm.amdgcn.image.atomic.fmin.1d.f32.f32(float, i32, <8 x i32>, i32, i32, i32)
+declare float @llvm.amdgcn.image.atomic.fmax.1d.f32.f32(float, i32, <8 x i32>, i32, i32, i32)
 
 
 define amdgpu_ps float @atomic_fmin_1d(<8 x i32> inreg %rsrc, float %data, i32 %s) {
@@ -67,7 +67,7 @@ define amdgpu_ps float @atomic_fmin_1d(<8 x i32> inreg %rsrc, float %data, i32 %
 ; G_GFX1030-NEXT:    s_waitcnt vmcnt(0)
 ; G_GFX1030-NEXT:    ; return to shader part epilog
 main_body:
-  %v = call float @llvm.amdgcn.image.atomic.fmin.1d.f32.f32(float %data, i32 %s, <8 x i32> %rsrc, i32 0, i32 0)
+  %v = call float @llvm.amdgcn.image.atomic.fmin.1d.f32.f32(float %data, i32 %s, <8 x i32> %rsrc, i32 0, i32 0, i32 0)
   ret float %v
 }
 
@@ -120,6 +120,6 @@ define amdgpu_ps float @atomic_fmax_1d(<8 x i32> inreg %rsrc, float %data, i32 %
 ; G_GFX1030-NEXT:    s_waitcnt vmcnt(0)
 ; G_GFX1030-NEXT:    ; return to shader part epilog
 main_body:
-  %v = call float @llvm.amdgcn.image.atomic.fmax.1d.f32.f32(float %data, i32 %s, <8 x i32> %rsrc, i32 0, i32 0)
+  %v = call float @llvm.amdgcn.image.atomic.fmax.1d.f32.f32(float %data, i32 %s, <8 x i32> %rsrc, i32 0, i32 0, i32 0)
   ret float %v
 }

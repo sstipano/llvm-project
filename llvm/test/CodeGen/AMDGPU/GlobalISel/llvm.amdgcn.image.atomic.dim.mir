@@ -57,7 +57,7 @@ body: |
     %0:sgpr(<8 x s32>) = COPY $sgpr0_sgpr1_sgpr2_sgpr3_sgpr4_sgpr5_sgpr6_sgpr7
     %1:vgpr(<2 x s32>) = COPY $vgpr0_vgpr1
     %2:vgpr(s32) = COPY $vgpr2
-    %3:vgpr(s32) = G_AMDGPU_INTRIN_IMAGE_LOAD intrinsic(@llvm.amdgcn.image.atomic.cmpswap.1d), %1(<2 x s32>), $noreg, %2(s32), %0(<8 x s32>), 0, 0, 0 :: (volatile dereferenceable load store (s32), addrspace 8)
+    %3:vgpr(s32) = G_AMDGPU_INTRIN_IMAGE_LOAD intrinsic(@llvm.amdgcn.image.atomic.cmpswap.1d), %1(<2 x s32>), $noreg, %2(s32), %0(<8 x s32>), 0, 0, 0, 0 :: (volatile dereferenceable load store (s32), addrspace 8)
     $vgpr0 = COPY %3(s32)
     SI_RETURN_TO_EPILOG implicit $vgpr0
 ...
@@ -107,7 +107,7 @@ body: |
     %0:sgpr(<8 x s32>) = COPY $sgpr0_sgpr1_sgpr2_sgpr3_sgpr4_sgpr5_sgpr6_sgpr7
     %1:vgpr(<2 x s32>) = COPY $vgpr0_vgpr1
     %2:vgpr(s32) = COPY $vgpr2
-    %3:vgpr(s32) = G_AMDGPU_INTRIN_IMAGE_LOAD intrinsic(@llvm.amdgcn.image.atomic.cmpswap.1d), %1(<2 x s32>), $noreg, %2(s32), %0(<8 x s32>), 0, 0, 0 :: (volatile dereferenceable load store (s32), addrspace 8)
+    %3:vgpr(s32) = G_AMDGPU_INTRIN_IMAGE_LOAD intrinsic(@llvm.amdgcn.image.atomic.cmpswap.1d), %1(<2 x s32>), $noreg, %2(s32), %0(<8 x s32>), 0, 0, 0, 0 :: (volatile dereferenceable load store (s32), addrspace 8)
     S_ENDPGM 0
 ...
 
@@ -164,7 +164,7 @@ body: |
     %0:sgpr(<8 x s32>) = COPY $sgpr0_sgpr1_sgpr2_sgpr3_sgpr4_sgpr5_sgpr6_sgpr7
     %1:vgpr(<2 x s64>) = COPY $vgpr0_vgpr1_vgpr2_vgpr3
     %2:vgpr(s32) = COPY $vgpr4
-    %3:vgpr(s64) = G_AMDGPU_INTRIN_IMAGE_LOAD intrinsic(@llvm.amdgcn.image.atomic.cmpswap.1d), %1(<2 x s64>), $noreg, %2(s32), %0(<8 x s32>), 0, 0, 0 :: (volatile dereferenceable load store (s64), addrspace 8)
+    %3:vgpr(s64) = G_AMDGPU_INTRIN_IMAGE_LOAD intrinsic(@llvm.amdgcn.image.atomic.cmpswap.1d), %1(<2 x s64>), $noreg, %2(s32), %0(<8 x s32>), 0, 0, 0, 0 :: (volatile dereferenceable load store (s64), addrspace 8)
     $vgpr0_vgpr1 = COPY %3(s64)
     SI_RETURN_TO_EPILOG implicit $vgpr0_vgpr1
 ...
@@ -214,6 +214,6 @@ body: |
     %0:sgpr(<8 x s32>) = COPY $sgpr0_sgpr1_sgpr2_sgpr3_sgpr4_sgpr5_sgpr6_sgpr7
     %1:vgpr(<2 x s64>) = COPY $vgpr0_vgpr1_vgpr2_vgpr3
     %2:vgpr(s32) = COPY $vgpr4
-    %3:vgpr(s64) = G_AMDGPU_INTRIN_IMAGE_LOAD intrinsic(@llvm.amdgcn.image.atomic.cmpswap.1d), %1(<2 x s64>), $noreg, %2(s32), %0(<8 x s32>), 0, 0, 0 :: (volatile dereferenceable load store (s64), addrspace 8)
+    %3:vgpr(s64) = G_AMDGPU_INTRIN_IMAGE_LOAD intrinsic(@llvm.amdgcn.image.atomic.cmpswap.1d), %1(<2 x s64>), $noreg, %2(s32), %0(<8 x s32>), 0, 0, 0, 0 :: (volatile dereferenceable load store (s64), addrspace 8)
     S_ENDPGM 0
 ...
