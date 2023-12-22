@@ -796,7 +796,8 @@ class AMDGPUImageDimIntrinsicEval<AMDGPUDimProfile P_> {
 // All dimension-aware intrinsics are derived from this class.
 class AMDGPUImageDimIntrinsic<AMDGPUDimProfile P_,
                               list<IntrinsicProperty> props,
-                              list<SDNodeProperty> sdnodeprops> : DefaultAttrsIntrinsic<
+                              list<SDNodeProperty> sdnodeprops,
+                              string name = ""> : Intrinsic<
     P_.RetTypes,        // vdata(VGPR) -- for load/atomic-with-return
     !listconcat(
       !foreach(arg, P_.DataArgs, arg.Type),      // vdata(VGPR) -- for store/atomic
@@ -806,13 +807,14 @@ class AMDGPUImageDimIntrinsic<AMDGPUDimProfile P_,
       !if(P_.IsSample, [llvm_v4i32_ty,           // samp(SGPR)
                         llvm_i1_ty], []),        // unorm(imm)
       [llvm_i32_ty,                              // texfailctrl(imm; bit 0 = tfe, bit 1 = lwe)
-       llvm_i32_ty]),                            // cachepolicy(imm; bit 0 = glc, bit 1 = slc, bit 2 = dlc)
+       llvm_i32_ty]),                             // cachepolicy(imm; bit 0 = glc, bit 1 = slc, bit 2 = dlc)
 
-     !listconcat(props,
+     !listconcat(props, [IntrNoCallback, IntrNoFree, IntrWillReturn],
           !if(P_.IsAtomic, [], [ImmArg<ArgIndex<AMDGPUImageDimIntrinsicEval<P_>.DmaskArgIndex>>]),
           !if(P_.IsSample, [ImmArg<ArgIndex<AMDGPUImageDimIntrinsicEval<P_>.UnormArgIndex>>], []),
           [ImmArg<ArgIndex<AMDGPUImageDimIntrinsicEval<P_>.TexFailCtrlArgIndex>>,
-           ImmArg<ArgIndex<AMDGPUImageDimIntrinsicEval<P_>.CachePolicyArgIndex>>]),
+           ImmArg<ArgIndex<AMDGPUImageDimIntrinsicEval<P_>.CachePolicyArgIndex>>],
+          !if(!or(P_.IsAtomic, !eq(name, "int_amdgcn_image_atomic_load")), [], [IntrNoSync])),
 
 
       "", sdnodeprops>,
@@ -858,12 +860,16 @@ defset list<AMDGPUImageDimIntrinsic> AMDGPUImageDimIntrinsics = {
       def !strconcat(NAME, "_", dim.Name)
         : AMDGPUImageDimIntrinsic<
             AMDGPUDimNoSampleProfile<opmod, dim, retty, dataargs, Mip>,
-            props, sdnodeprops>;
+            props, sdnodeprops, NAME>;
     }
   }
 
   defm int_amdgcn_image_load
     : AMDGPUImageDimIntrinsicsAll<"LOAD", [llvm_any_ty], [], [IntrReadMem],
+                                  [SDNPMemOperand]>,
+      AMDGPUImageDMaskIntrinsic;
+  defm int_amdgcn_image_atomic_load
+    : AMDGPUImageDimIntrinsicsAll<"ATOMIC_LOAD", [llvm_any_ty], [], [],
                                   [SDNPMemOperand]>,
       AMDGPUImageDMaskIntrinsic;
   defm int_amdgcn_image_load_mip

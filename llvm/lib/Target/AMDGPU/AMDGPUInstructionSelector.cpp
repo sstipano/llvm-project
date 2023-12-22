@@ -17,6 +17,7 @@
 #include "AMDGPUInstrInfo.h"
 #include "AMDGPURegisterBankInfo.h"
 #include "AMDGPUTargetMachine.h"
+#include "SIDefines.h"
 #include "SIMachineFunctionInfo.h"
 #include "Utils/AMDGPUBaseInfo.h"
 #include "llvm/CodeGen/GlobalISel/GIMatchTableExecutorImpl.h"
@@ -1901,6 +1902,7 @@ bool AMDGPUInstructionSelector::selectImageIntrinsic(
   assert((!IsTexFail || DMaskLanes >= 1) && "should have legalized this");
 
   unsigned CPol = MI.getOperand(ArgOffset + Intr->CachePolicyIndex).getImm();
+  CPol &= ~AMDGPU::CPol::ATOMIC_ORDERING;
   if (BaseOpcode->Atomic)
     CPol |= AMDGPU::CPol::GLC; // TODO no-return optimization
   if (CPol & ~AMDGPU::CPol::ALL)
