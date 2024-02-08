@@ -277,102 +277,137 @@ static LegalityPredicate elementTypeIsLegal(unsigned TypeIdx) {
   };
 }
 
-static const LLT S1 = LLT::scalar(1);
-static const LLT S8 = LLT::scalar(8);
-static const LLT S16 = LLT::scalar(16);
-static const LLT S32 = LLT::scalar(32);
-static const LLT S64 = LLT::scalar(64);
-static const LLT S96 = LLT::scalar(96);
-static const LLT S128 = LLT::scalar(128);
-static const LLT S160 = LLT::scalar(160);
-static const LLT S224 = LLT::scalar(224);
-static const LLT S256 = LLT::scalar(256);
-static const LLT S512 = LLT::scalar(512);
-static const LLT MaxScalar = LLT::scalar(MaxRegisterSize);
+static LLT GetAddrSpacePtr(unsigned AS, const GCNTargetMachine &TM) {
+  return LLT::pointer(AS, TM.getPointerSizeInBits(AS));
+}
 
-static const LLT V2S8 = LLT::fixed_vector(2, 8);
-static const LLT V2S16 = LLT::fixed_vector(2, 16);
-static const LLT V4S16 = LLT::fixed_vector(4, 16);
-static const LLT V6S16 = LLT::fixed_vector(6, 16);
-static const LLT V8S16 = LLT::fixed_vector(8, 16);
-static const LLT V10S16 = LLT::fixed_vector(10, 16);
-static const LLT V12S16 = LLT::fixed_vector(12, 16);
-static const LLT V16S16 = LLT::fixed_vector(16, 16);
+void AMDGPULegalizerInfo::initializeTypes() {
+  S1 = LLT::scalar(1);
+  S8 = LLT::scalar(8);
+  S16 = LLT::scalar(16);
+  S32 = LLT::scalar(32);
+  S64 = LLT::scalar(64);
+  S96 = LLT::scalar(96);
+  S128 = LLT::scalar(128);
+  S160 = LLT::scalar(160);
+  S224 = LLT::scalar(224);
+  S256 = LLT::scalar(256);
+  S512 = LLT::scalar(512);
+  MaxScalar = LLT::scalar(MaxRegisterSize);
 
-static const LLT V2S32 = LLT::fixed_vector(2, 32);
-static const LLT V3S32 = LLT::fixed_vector(3, 32);
-static const LLT V4S32 = LLT::fixed_vector(4, 32);
-static const LLT V5S32 = LLT::fixed_vector(5, 32);
-static const LLT V6S32 = LLT::fixed_vector(6, 32);
-static const LLT V7S32 = LLT::fixed_vector(7, 32);
-static const LLT V8S32 = LLT::fixed_vector(8, 32);
-static const LLT V9S32 = LLT::fixed_vector(9, 32);
-static const LLT V10S32 = LLT::fixed_vector(10, 32);
-static const LLT V11S32 = LLT::fixed_vector(11, 32);
-static const LLT V12S32 = LLT::fixed_vector(12, 32);
-static const LLT V16S32 = LLT::fixed_vector(16, 32);
-static const LLT V32S32 = LLT::fixed_vector(32, 32);
+  V2S8 = LLT::fixed_vector(2, 8);
+  V2S16 = LLT::fixed_vector(2, 16);
+  V4S16 = LLT::fixed_vector(4, 16);
+  V6S16 = LLT::fixed_vector(6, 16);
+  V8S16 = LLT::fixed_vector(8, 16);
+  V10S16 = LLT::fixed_vector(10, 16);
+  V12S16 = LLT::fixed_vector(12, 16);
+  V16S16 = LLT::fixed_vector(16, 16);
 
-static const LLT V2S64 = LLT::fixed_vector(2, 64);
-static const LLT V3S64 = LLT::fixed_vector(3, 64);
-static const LLT V4S64 = LLT::fixed_vector(4, 64);
-static const LLT V5S64 = LLT::fixed_vector(5, 64);
-static const LLT V6S64 = LLT::fixed_vector(6, 64);
-static const LLT V7S64 = LLT::fixed_vector(7, 64);
-static const LLT V8S64 = LLT::fixed_vector(8, 64);
-static const LLT V16S64 = LLT::fixed_vector(16, 64);
+  V2S32 = LLT::fixed_vector(2, 32);
+  V3S32 = LLT::fixed_vector(3, 32);
+  V4S32 = LLT::fixed_vector(4, 32);
+  V5S32 = LLT::fixed_vector(5, 32);
+  V6S32 = LLT::fixed_vector(6, 32);
+  V7S32 = LLT::fixed_vector(7, 32);
+  V8S32 = LLT::fixed_vector(8, 32);
+  V9S32 = LLT::fixed_vector(9, 32);
+  V10S32 = LLT::fixed_vector(10, 32);
+  V11S32 = LLT::fixed_vector(11, 32);
+  V12S32 = LLT::fixed_vector(12, 32);
+  V16S32 = LLT::fixed_vector(16, 32);
+  V32S32 = LLT::fixed_vector(32, 32);
 
-static const LLT V2S128 = LLT::fixed_vector(2, 128);
-static const LLT V4S128 = LLT::fixed_vector(4, 128);
+  V2S64 = LLT::fixed_vector(2, 64);
+  V3S64 = LLT::fixed_vector(3, 64);
+  V4S64 = LLT::fixed_vector(4, 64);
+  V5S64 = LLT::fixed_vector(5, 64);
+  V6S64 = LLT::fixed_vector(6, 64);
+  V7S64 = LLT::fixed_vector(7, 64);
+  V8S64 = LLT::fixed_vector(8, 64);
+  V16S64 = LLT::fixed_vector(16, 64);
 
-static std::initializer_list<LLT> AllScalarTypes = {S32,  S64,  S96,  S128,
-                                                    S160, S224, S256, S512};
+  V2S128 = LLT::fixed_vector(2, 128);
+  V4S128 = LLT::fixed_vector(4, 128);
 
-static std::initializer_list<LLT> AllS16Vectors{
-    V2S16, V4S16, V6S16, V8S16, V10S16, V12S16, V16S16, V2S128, V4S128};
+  GlobalPtr = GetAddrSpacePtr(AMDGPUAS::GLOBAL_ADDRESS, TM);
+  ConstantPtr = GetAddrSpacePtr(AMDGPUAS::CONSTANT_ADDRESS, TM);
+  Constant32Ptr = GetAddrSpacePtr(AMDGPUAS::CONSTANT_ADDRESS_32BIT, TM);
+  LocalPtr = GetAddrSpacePtr(AMDGPUAS::LOCAL_ADDRESS, TM);
+  RegionPtr = GetAddrSpacePtr(AMDGPUAS::REGION_ADDRESS, TM);
+  FlatPtr = GetAddrSpacePtr(AMDGPUAS::FLAT_ADDRESS, TM);
+  PrivatePtr = GetAddrSpacePtr(AMDGPUAS::PRIVATE_ADDRESS, TM);
+  BufferFatPtr = GetAddrSpacePtr(AMDGPUAS::BUFFER_FAT_POINTER, TM);
+  RsrcPtr = GetAddrSpacePtr(AMDGPUAS::BUFFER_RESOURCE, TM);
+  BufferStridedPtr = GetAddrSpacePtr(AMDGPUAS::BUFFER_STRIDED_POINTER, TM);
 
-static std::initializer_list<LLT> AllS32Vectors = {
-    V2S32, V3S32,  V4S32,  V5S32,  V6S32,  V7S32, V8S32,
-    V9S32, V10S32, V11S32, V12S32, V16S32, V32S32};
+  V2FlatPtr = LLT::fixed_vector(2, FlatPtr);
+  V3LocalPtr = LLT::fixed_vector(3, LocalPtr);
+  V5LocalPtr = LLT::fixed_vector(5, LocalPtr);
+  V16LocalPtr = LLT::fixed_vector(16, LocalPtr);
+  V2GlobalPtr = LLT::fixed_vector(2, GlobalPtr);
+  V4GlobalPtr = LLT::fixed_vector(4, GlobalPtr);
+}
 
-static std::initializer_list<LLT> AllS64Vectors = {V2S64, V3S64, V4S64, V5S64,
-                                                   V6S64, V7S64, V8S64, V16S64};
+// static std::initializer_list<LLT> AllScalarTypes = {S32,  S64,  S96,  S128,
+//                                                     S160, S224, S256, S512};
+
+// static std::initializer_list<LLT> AllS16Vectors{
+//     V2S16, V4S16, V6S16, V8S16, V10S16, V12S16, V16S16, V2S128, V4S128};
+
+// static std::initializer_list<LLT> AllS32Vectors = {
+//     V2S32, V3S32,  V4S32,  V5S32,  V6S32,  V7S32, V8S32,
+//     V9S32, V10S32, V11S32, V12S32, V16S32, V32S32};
+
+// static std::initializer_list<LLT> AllS64Vectors = {V2S64, V3S64, V4S64, V5S64,
+//                                                    V6S64, V7S64, V8S64, V16S64};
 
 static bool typeInSet(LLT Ty, std::initializer_list<LLT> TypesInit) {
   SmallVector<LLT, 4> Types = TypesInit;
   return llvm::is_contained(Types, Ty);
 }
 
-static LLT GetAddrSpacePtr(unsigned AS, const GCNTargetMachine &TM) {
-  return LLT::pointer(AS, TM.getPointerSizeInBits(AS));
-}
-
 // Checks whether a type is in the list of legal register types.
-static bool isRegisterClassType(LLT Ty, const GCNTargetMachine &TM) {
-  const LLT GlobalPtr = GetAddrSpacePtr(AMDGPUAS::GLOBAL_ADDRESS, TM);
-  const LLT LocalPtr = GetAddrSpacePtr(AMDGPUAS::LOCAL_ADDRESS, TM);
-  const LLT FlatPtr = GetAddrSpacePtr(AMDGPUAS::FLAT_ADDRESS, TM);
+bool AMDGPULegalizerInfo::isRegisterClassType(LLT Ty) {
+  // const LLT GlobalPtr = GetAddrSpacePtr(AMDGPUAS::GLOBAL_ADDRESS, TM);
+  // const LLT LocalPtr = GetAddrSpacePtr(AMDGPUAS::LOCAL_ADDRESS, TM);
+  // const LLT FlatPtr = GetAddrSpacePtr(AMDGPUAS::FLAT_ADDRESS, TM);
 
   // TODO: list all possible ptr vectors
-  const LLT V2FlatPtr = LLT::fixed_vector(2, FlatPtr);
-  const LLT V3LocalPtr = LLT::fixed_vector(3, LocalPtr);
-  const LLT V5LocalPtr = LLT::fixed_vector(5, LocalPtr);
-  const LLT V16LocalPtr = LLT::fixed_vector(16, LocalPtr);
-  const LLT V2GlobalPtr = LLT::fixed_vector(2, GlobalPtr);
-  const LLT V4GlobalPtr = LLT::fixed_vector(4, GlobalPtr);
+  // const LLT V2FlatPtr = LLT::fixed_vector(2, FlatPtr);
+  // const LLT V3LocalPtr = LLT::fixed_vector(3, LocalPtr);
+  // const LLT V5LocalPtr = LLT::fixed_vector(5, LocalPtr);
+  // const LLT V16LocalPtr = LLT::fixed_vector(16, LocalPtr);
+  // const LLT V2GlobalPtr = LLT::fixed_vector(2, GlobalPtr);
+  // const LLT V4GlobalPtr = LLT::fixed_vector(4, GlobalPtr);
 
-  std::initializer_list<LLT> AllPtrTypes{V2FlatPtr,   V3LocalPtr,  V5LocalPtr,
-                                         V16LocalPtr, V2GlobalPtr, V4GlobalPtr};
+  // std::initializer_list<LLT> AllPtrTypes{V2FlatPtr,   V3LocalPtr,  V5LocalPtr,
+  //                                        V16LocalPtr, V2GlobalPtr, V4GlobalPtr};
+
+  // std::initializer_list<LLT> AllScalarTypes = {S32,  S64,  S96,  S128,
+  //                                                     S160, S224, S256, S512};
+
+  // std::initializer_list<LLT> AllS16Vectors{
+  //     V2S16, V4S16, V6S16, V8S16, V10S16, V12S16, V16S16, V2S128, V4S128};
+
+  // std::initializer_list<LLT> AllS32Vectors = {
+  //     V2S32, V3S32,  V4S32,  V5S32,  V6S32,  V7S32, V8S32,
+  //     V9S32, V10S32, V11S32, V12S32, V16S32, V32S32};
+
+  // std::initializer_list<LLT> AllS64Vectors = {
+  //     V2S64, V3S64, V4S64, V5S64, V6S64, V7S64, V8S64, V16S64};
+
+  // std::initializer_list<LLT> AllPtrTypes{V2FlatPtr,   V3LocalPtr,  V5LocalPtr,
+  //                                        V16LocalPtr, V2GlobalPtr, V4GlobalPtr};
 
   return typeInSet(Ty, AllS32Vectors) || typeInSet(Ty, AllS64Vectors) ||
          typeInSet(Ty, AllScalarTypes) || typeInSet(Ty, AllS16Vectors) ||
          typeInSet(Ty, AllPtrTypes) || Ty.isPointer();
 }
 
-static LegalityPredicate isRegisterClassType(unsigned TypeIdx,
-                                             const GCNTargetMachine &TM) {
-  return [TypeIdx, &TM](const LegalityQuery &Query) {
-    return isRegisterClassType(Query.Types[TypeIdx], TM);
+LegalityPredicate AMDGPULegalizerInfo::isRegisterClassType(unsigned TypeIdx) {
+  return [TypeIdx, this](const LegalityQuery &Query) {
+    return isRegisterClassType(Query.Types[TypeIdx]);
   };
 }
 
@@ -670,8 +705,8 @@ static void castBufferRsrcArgToV4I32(MachineInstr &MI, MachineIRBuilder &B,
 }
 
 AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
-                                         const GCNTargetMachine &TM)
-  :  ST(ST_) {
+                                         const GCNTargetMachine &TM_)
+  :  ST(ST_), TM(TM_) {
   using namespace TargetOpcode;
 
   const LLT GlobalPtr = GetAddrSpacePtr(AMDGPUAS::GLOBAL_ADDRESS, TM);
@@ -687,7 +722,25 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
   const LLT BufferStridedPtr =
       GetAddrSpacePtr(AMDGPUAS::BUFFER_STRIDED_POINTER, TM);
 
+  initializeTypes();
+
+  AllScalarTypes = {S32, S64, S96, S128, S160, S224, S256, S512};
+
+  AllS16Vectors = {V2S16,  V4S16,  V6S16,  V8S16, V10S16,
+                   V12S16, V16S16, V2S128, V4S128};
+
+  AllS32Vectors = {V2S32, V3S32,  V4S32,  V5S32,  V6S32,  V7S32, V8S32,
+                   V9S32, V10S32, V11S32, V12S32, V16S32, V32S32};
+
+  AllS64Vectors = {V2S64, V3S64, V4S64, V5S64, V6S64, V7S64, V8S64, V16S64};
+
+  AllPtrTypes = {V2FlatPtr,   V3LocalPtr,  V5LocalPtr,
+                 V16LocalPtr, V2GlobalPtr, V4GlobalPtr};
+
   const LLT CodePtr = FlatPtr;
+
+  LLVM_DEBUG(dbgs() << "S32: " << (isRegisterClassType(S32) ? "TRUE\n" : "FALSE\n"));
+  LLVM_DEBUG(dbgs() << "V2S16: " << (isRegisterClassType(S32) ? "TRUE\n" : "FALSE\n"));
 
   const std::initializer_list<LLT> AddrSpaces64 = {
     GlobalPtr, ConstantPtr, FlatPtr
@@ -888,7 +941,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
 
   getActionDefinitionsBuilder(G_BITCAST)
       // Don't worry about the size constraint.
-      .legalIf(all(isRegisterClassType(0, TM), isRegisterClassType(1, TM)))
+      .legalIf(all(isRegisterClassType(0), isRegisterClassType(1)))
       .lower();
 
   getActionDefinitionsBuilder(G_CONSTANT)

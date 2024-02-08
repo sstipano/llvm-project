@@ -14,7 +14,9 @@
 #ifndef LLVM_LIB_TARGET_AMDGPU_AMDGPUMACHINELEGALIZER_H
 #define LLVM_LIB_TARGET_AMDGPU_AMDGPUMACHINELEGALIZER_H
 
+#include "AMDGPUTargetMachine.h"
 #include "llvm/CodeGen/GlobalISel/LegalizerInfo.h"
+#include "llvm/Support/AMDGPUAddrSpace.h"
 #include "AMDGPUArgumentUsageInfo.h"
 #include "SIInstrInfo.h"
 
@@ -29,6 +31,58 @@ struct ImageDimIntrinsicInfo;
 }
 class AMDGPULegalizerInfo final : public LegalizerInfo {
   const GCNSubtarget &ST;
+  const GCNTargetMachine &TM;
+
+  LLT getAddrSpacePtr(unsigned AS) {
+    return LLT::pointer(AS, TM.getPointerSizeInBits(AS));
+  };
+
+  // All scalar types
+  LLT S1, S8, S16, S32, S64, S96, S128, S160, S224, S256, S512, MaxScalar;
+
+  // All vector types
+  LLT V2S8, V2S16, V4S16, V6S16, V8S16, V10S16, V12S16, V16S16, V2S32,
+      V3S32, V4S32, V5S32, V6S32, V7S32, V8S32, V9S32, V10S32, V11S32, V12S32,
+      V16S32, V32S32, V2S64, V3S64, V4S64, V5S64, V6S64, V7S64, V8S64, V16S64,
+      V2S128, V4S128;
+
+  // All Ptr types
+  LLT GlobalPtr, ConstantPtr, Constant32Ptr, LocalPtr, RegionPtr, FlatPtr,
+      PrivatePtr, RsrcPtr, AS999Ptr, BufferFatPtr, BufferStridedPtr;
+
+  LLT V2FlatPtr, V3LocalPtr, V5LocalPtr, V16LocalPtr, V2GlobalPtr,
+      V4GlobalPtr;
+
+  // std::initializer_list<LLT> AllScalarTypes = {S32,  S64,  S96,  S128,
+  //                                                     S160, S224, S256, S512};
+
+  // std::initializer_list<LLT> AllS16Vectors{
+  //     V2S16, V4S16, V6S16, V8S16, V10S16, V12S16, V16S16, V2S128, V4S128};
+
+  // std::initializer_list<LLT> AllS32Vectors = {
+  //     V2S32, V3S32,  V4S32,  V5S32,  V6S32,  V7S32, V8S32,
+  //     V9S32, V10S32, V11S32, V12S32, V16S32, V32S32};
+
+  // std::initializer_list<LLT> AllS64Vectors = {
+  //     V2S64, V3S64, V4S64, V5S64, V6S64, V7S64, V8S64, V16S64};
+
+  // std::initializer_list<LLT> AllPtrTypes{V2FlatPtr,   V3LocalPtr,  V5LocalPtr,
+  //                                        V16LocalPtr, V2GlobalPtr, V4GlobalPtr};
+  std::initializer_list<LLT> AllScalarTypes;
+  std::initializer_list<LLT> AllS16Vectors;
+  std::initializer_list<LLT> AllS32Vectors;
+  std::initializer_list<LLT> AllS64Vectors;
+  std::initializer_list<LLT> AllPtrTypes;
+
+  // const LLT GlobalPtr = getAddrSpacePtr(AMDGPUAS::GLOBAL_ADDRESS); // p1
+  // const LLT ConstantPtr = getAddrSpacePtr(AMDGPUAS::CONSTANT_ADDRESS);
+  // const LLT Constant32Ptr = getAddrSpacePtr(AMDGPUAS::CONSTANT_ADDRESS_32BIT);
+  // const LLT LocalPtr = getAddrSpacePtr(AMDGPUAS::LOCAL_ADDRESS);
+  // const LLT RegionPtr = getAddrSpacePtr(AMDGPUAS::REGION_ADDRESS);
+  // const LLT FlatPtr = getAddrSpacePtr(AMDGPUAS::FLAT_ADDRESS);
+  // const LLT PrivatePtr = getAddrSpacePtr(AMDGPUAS::PRIVATE_ADDRESS); // p5
+  // const LLT RsrcPtr = getAddrSpacePtr(AMDGPUAS::BUFFER_RESOURCE);
+  // const LLT AS999Ptr = getAddrSpacePtr(999);
 
 public:
   AMDGPULegalizerInfo(const GCNSubtarget &ST,
@@ -234,6 +288,12 @@ public:
 
   bool legalizeIntrinsic(LegalizerHelper &Helper,
                          MachineInstr &MI) const override;
+
+  void initializeTypes();
+
+  LegalityPredicate isRegisterClassType(unsigned TypeIdx);
+
+  bool isRegisterClassType(LLT Ty);
 };
 } // End llvm namespace.
 #endif
